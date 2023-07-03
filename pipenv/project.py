@@ -240,12 +240,42 @@ class Project:
         return bool(self.requirements_location)
 
     def is_venv_in_project(self) -> bool:
-        if self.s.PIPENV_VENV_IN_PROJECT is False:
-            return False
-        return self.s.PIPENV_VENV_IN_PROJECT or (
-            self.project_directory
-            and os.path.isdir(os.path.join(self.project_directory, ".venv"))
-        )
+        """
+        There are three sources of truth to reconcile:
+
+        - PIPENV_VENV_IN_PROJECT environment variable
+        - venv_in_project directive in Pipfile
+        - an existing .venv directory
+
+        If the Pipfile and ENV var disagree, there are a few options:
+
+        1. Semantic precedence:
+            - if either is True, then VENV_IN_PROJECT=true
+            - if one is False and the other is None, then VENV_IN_PROJECT=false
+        2. Pipfile precedence over ENV Var
+        3. ENV Var precedence over Pipfile
+
+        Whichever one we choose, the Pipfile + Env Var will resolve to true/false/None,
+        and we can then follow the same logic:
+
+        - if explicitly False, return False.
+        - otherwise, return
+        """
+        pipfile_directive = self.get_pipfile_section("pipenv").get("venv_in_project", None)
+        # TODO: doesn't implement False or None correctly, but fix after getting feedback on
+        #   the desired resolution strategy for Pipfile vs. ENV VAR precedence
+        venv_in_project: Optional[bool] = pipfile_directive or self.s.PIPENV_VENV_IN_PROJECT
+
+        if venv_in_project is None:  # If not explicit, defer to existing venv
+            # Previous logic with self.project_directory not needed since now project_directory cannot be None
+            # https://github.com/justin-yan/pipenv/commit/1e0882c74da5a3074bd5c8f2834f8a151966233f#diff-30286674f55dc3069ed2258ba9962214f350a718c031fb37bd8afda55fef357bR219
+            retval = os.path.isdir(os.path.join(self.project_directory, ".venv"))
+        else:
+            retval = venv_in_project
+
+        print("VENV_IN_PROJECT:")
+        print(retval)
+        return retval
 
     @property
     def virtualenv_exists(self) -> bool:
